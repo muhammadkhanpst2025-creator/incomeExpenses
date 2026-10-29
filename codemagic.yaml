@@ -1,18 +1,28 @@
+
 workflows:
-  sahil-khata-android:
-    name: Income and Expenses Android APK
+  income-expenses-android:
+    name: Income & Expenses Android APK
     max_build_duration: 60
+
     environment:
       flutter: stable
+
     scripts:
-      - name: Initialize Android platform files
-        script: flutter create --platforms=android --project-name=income_expenses .
-      - name: Get Flutter packages
+      - name: Check Flutter project
+        script: |
+          echo "Checking Flutter project files..."
+          test -f pubspec.yaml || (echo "ERROR: pubspec.yaml missing" && exit 1)
+          test -f lib/main.dart || (echo "ERROR: lib/main.dart missing" && exit 1)
+          test -d android || (echo "ERROR: android folder missing. This must be a complete Flutter project." && exit 1)
+
+      - name: Install dependencies
         script: flutter pub get
-      - name: Analyze Dart source
-        script: flutter analyze lib || true
+
+      - name: Analyze code
+        script: flutter analyze
+
       - name: Build release APK
         script: flutter build apk --release
+
     artifacts:
-      - build/app/outputs/flutter-apk/*.apk
-      - flutter_drive.log
+      - build/app/outputs/flutter-apk/app-release.apk
