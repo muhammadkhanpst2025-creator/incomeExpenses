@@ -87,7 +87,7 @@ class DBHelper {
   // Transaction Operations
   Future<int> insertTransaction(TransactionItem transaction) async {
     final db = await instance.database;
-    return db.transaction((txn) async {
+    return await db.transaction((txn) async {
       final id = await txn.insert('transactions', transaction.toMap());
       final accounts = await txn.query(
         'accounts',
