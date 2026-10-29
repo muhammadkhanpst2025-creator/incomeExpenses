@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
@@ -7,7 +8,6 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'database.dart';
 import 'models.dart';
-import 'widgets.dart';
 
 class ReportsPage extends StatefulWidget {
   const ReportsPage({super.key});
@@ -19,8 +19,10 @@ class ReportsPage extends StatefulWidget {
 class _ReportsPageState extends State<ReportsPage> {
   String _type = 'payable';
   int? _selectedAccountId;
+
   List<KhataAccount> _accounts = [];
   List<KhataTransaction> _transactions = [];
+
   bool _loading = true;
 
   @override
@@ -30,23 +32,36 @@ class _ReportsPageState extends State<ReportsPage> {
   }
 
   Future<void> _loadReport() async {
-    setState(() => _loading = true);
+    if (mounted) {
+      setState(() => _loading = true);
+    }
 
     try {
-      final accounts = await KhataDatabase.instance.getAccounts(
+      // Database maps ko KhataAccount models mein convert karein.
+      final accountMaps = await KhataDatabase.instance.getAccounts(
         type: _type,
       );
 
+      final accounts = accountMaps
+          .map((map) => KhataAccount.fromMap(map))
+          .toList();
+
       int? accountId = _selectedAccountId;
-      if (!accounts.any((a) => a.id == accountId)) {
+
+      if (!accounts.any((account) => account.id == accountId)) {
         accountId = accounts.isNotEmpty ? accounts.first.id : null;
       }
 
-      final transactions = accountId == null
-          ? <KhataTransaction>[]
+      // Database maps ko KhataTransaction models mein convert karein.
+      final transactionMaps = accountId == null
+          ? <Map<String, dynamic>>[]
           : await KhataDatabase.instance.getTransactions(
               accountId: accountId,
             );
+
+      final transactions = transactionMaps
+          .map((map) => KhataTransaction.fromMap(map))
+          .toList();
 
       if (!mounted) return;
 
@@ -58,7 +73,9 @@ class _ReportsPageState extends State<ReportsPage> {
       });
     } catch (e) {
       if (!mounted) return;
+
       setState(() => _loading = false);
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Report load nahi hui: $e')),
       );
@@ -67,20 +84,24 @@ class _ReportsPageState extends State<ReportsPage> {
 
   KhataAccount? get _selectedAccount {
     for (final account in _accounts) {
-      if (account.id == _selectedAccountId) return account;
+      if (account.id == _selectedAccountId) {
+        return account;
+      }
     }
     return null;
   }
 
-  String get _reportTitle =>
-      _type == 'payable' ? 'Payable Report' : 'Receivable Report';
-
-  String _dateText(String value) {
-    final parsed = DateTime.tryParse(value);
-    return parsed == null ? value : DateFormat('dd-MM-yyyy').format(parsed);
+  String get _reportTitle {
+    return _type == 'payable'
+        ? 'Payable Report'
+        : 'Receivable Report';
   }
 
-  Future<List<int>> _createPdf() async {
+  String _dateText(DateTime value) {
+    return DateFormat('dd-MM-yyyy').format(value);
+  }
+
+  Future<Uint8List> _createPdf() async {
     final account = _selectedAccount;
     final pdf = pw.Document();
 
@@ -98,23 +119,32 @@ class _ReportsPageState extends State<ReportsPage> {
           pw.Text(_reportTitle),
           pw.SizedBox(height: 12),
           pw.Text('Account: ${account?.name ?? "No account"}'),
-          pw.Text('Date: ${DateFormat('dd-MM-yyyy').format(DateTime.now())}'),
+          pw.Text(
+            'Date: ${DateFormat('dd-MM-yyyy').format(DateTime.now())}',
+          ),
           pw.SizedBox(height: 16),
           pw.TableHelper.fromTextArray(
             headers: ['Date', 'Type', 'Category / Note', 'Amount'],
-            data: _transactions.map((t) {
+            data: _transactions.map((transaction) {
               return [
-                _dateText(t.date),
-                t.type,
-                (t.note ?? '').isEmpty ? (t.category ?? '-') : t.note!,
-                t.amount.toStringAsFixed(2),
+                _dateText(transaction.date),
+                transaction.type,
+                transaction.note.isEmpty
+                    ? (transaction.category.isEmpty
+                        ? '-'
+                        : transaction.category)
+                    : transaction.note,
+                transaction.amount.toStringAsFixed(2),
               ];
             }).toList(),
           ),
           pw.SizedBox(height: 16),
           pw.Text(
-            'Current account balance: ${account?.balance.toStringAsFixed(2) ?? "0.00"}',
-            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
+            'Current account balance: '
+            '${account?.balance.toStringAsFixed(2) ?? "0.00"}',
+            style: pw.TextStyle(
+              fontWeight: pw.FontWeight.bold,
+            ),
           ),
         ],
       ),
@@ -131,10 +161,13 @@ class _ReportsPageState extends State<ReportsPage> {
 
     try {
       final bytes = await _createPdf();
+      final accountName = _selectedAccount!.name
+          .replaceAll(RegExp(r'[^\w\-]'), '_');
+
       await Printing.sharePdf(
         bytes: bytes,
         filename:
-            '${_reportTitle.replaceAll(' ', '_')}_${_selectedAccount!.name.replaceAll(' ', '_')}.pdf',
+            '${_reportTitle.replaceAll(' ', '_')}_$accountName.pdf',
       );
     } catch (e) {
       _showMessage('PDF share nahi hui: $e');
@@ -143,12 +176,13 @@ class _ReportsPageState extends State<ReportsPage> {
 
   Future<void> _shareWhatsAppMessage() async {
     final account = _selectedAccount;
+
     if (account == null) {
       _showMessage('Pehle account select karein.');
       return;
     }
 
-    final phone = (account.phone ?? '').replaceAll(
+    final phone = account.phone.replaceAll(
       RegExp(r'[^0-9+]'),
       '',
     );
@@ -162,6 +196,7 @@ class _ReportsPageState extends State<ReportsPage> {
     }
 
     String normalizedPhone = phone.replaceAll('+', '');
+
     if (normalizedPhone.startsWith('00')) {
       normalizedPhone = normalizedPhone.substring(2);
     } else if (normalizedPhone.startsWith('0')) {
@@ -189,6 +224,7 @@ Report prepared by Income & Expenses app.
         uri,
         mode: LaunchMode.externalApplication,
       );
+
       if (!opened) {
         _showMessage('WhatsApp open nahi ho saka.');
       }
@@ -199,6 +235,7 @@ Report prepared by Income & Expenses app.
 
   void _showMessage(String message) {
     if (!mounted) return;
+
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(content: Text(message)),
     );
@@ -219,12 +256,12 @@ Report prepared by Income & Expenses app.
           children: [
             SegmentedButton<String>(
               segments: const [
-                ButtonSegment(
+                ButtonSegment<String>(
                   value: 'payable',
                   label: Text('Payable'),
                   icon: Icon(Icons.call_made),
                 ),
-                ButtonSegment(
+                ButtonSegment<String>(
                   value: 'receivable',
                   label: Text('Receivable'),
                   icon: Icon(Icons.call_received),
@@ -236,16 +273,19 @@ Report prepared by Income & Expenses app.
                   _type = selection.first;
                   _selectedAccountId = null;
                 });
+
                 _loadReport();
               },
             ),
             const SizedBox(height: 18),
             if (_loading)
-              const Center(child: CircularProgressIndicator())
+              const Center(
+                child: CircularProgressIndicator(),
+              )
             else ...[
               if (_accounts.isNotEmpty)
                 DropdownButtonFormField<int>(
-                  value: _selectedAccountId,
+                  initialValue: _selectedAccountId,
                   decoration: const InputDecoration(
                     labelText: 'Select account',
                     border: OutlineInputBorder(),
@@ -257,7 +297,10 @@ Report prepared by Income & Expenses app.
                     );
                   }).toList(),
                   onChanged: (value) {
-                    setState(() => _selectedAccountId = value);
+                    setState(() {
+                      _selectedAccountId = value;
+                    });
+
                     _loadReport();
                   },
                 )
@@ -269,7 +312,9 @@ Report prepared by Income & Expenses app.
               if (account != null)
                 Card(
                   child: ListTile(
-                    leading: const Icon(Icons.account_balance_wallet),
+                    leading: const Icon(
+                      Icons.account_balance_wallet,
+                    ),
                     title: Text(account.name),
                     subtitle: Text(_reportTitle),
                     trailing: Text(
@@ -288,7 +333,8 @@ Report prepared by Income & Expenses app.
                 children: [
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed: account == null ? null : _sharePdf,
+                      onPressed:
+                          account == null ? null : _sharePdf,
                       icon: const Icon(Icons.picture_as_pdf),
                       label: const Text('Share PDF'),
                     ),
@@ -296,8 +342,9 @@ Report prepared by Income & Expenses app.
                   const SizedBox(width: 10),
                   Expanded(
                     child: FilledButton.icon(
-                      onPressed:
-                          account == null ? null : _shareWhatsAppMessage,
+                      onPressed: account == null
+                          ? null
+                          : _shareWhatsAppMessage,
                       icon: const Icon(Icons.message),
                       label: const Text('WhatsApp'),
                     ),
@@ -314,24 +361,29 @@ Report prepared by Income & Expenses app.
                 const Card(
                   child: Padding(
                     padding: EdgeInsets.all(18),
-                    child: Text('Is account ki koi transaction nahi mili.'),
+                    child: Text(
+                      'Is account ki koi transaction nahi mili.',
+                    ),
                   ),
                 )
               else
                 ..._transactions.map(
-                  (t) => Card(
+                  (transaction) => Card(
                     child: ListTile(
                       leading: const Icon(Icons.receipt_long),
                       title: Text(
-                        (t.note ?? '').isEmpty
-                            ? (t.category ?? t.type)
-                            : t.note!,
+                        transaction.note.isEmpty
+                            ? (transaction.category.isEmpty
+                                ? transaction.type
+                                : transaction.category)
+                            : transaction.note,
                       ),
                       subtitle: Text(
-                        '${t.type} • ${_dateText(t.date)}',
+                        '${transaction.type} • '
+                        '${_dateText(transaction.date)}',
                       ),
                       trailing: Text(
-                        t.amount.toStringAsFixed(2),
+                        transaction.amount.toStringAsFixed(2),
                       ),
                     ),
                   ),
