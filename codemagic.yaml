@@ -5,6 +5,8 @@ workflows:
     environment:
       flutter: stable
     scripts:
+      - name: Initialize Android platform files
+        script: flutter create --platforms=android --project-name=income_expenses .
       - name: Get Flutter packages
         script: flutter pub get
       - name: Analyze Dart source
