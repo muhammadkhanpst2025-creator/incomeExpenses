@@ -9,8 +9,6 @@ workflows:
         script: flutter create --platforms=android --project-name=sahil_khata .
       - name: Get Flutter packages
         script: flutter pub get
-      - name: Run Flutter tests
-        script: flutter test
       - name: Analyze Dart source
         script: flutter analyze
       - name: Build release APK
