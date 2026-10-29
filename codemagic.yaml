@@ -1,4 +1,3 @@
-
 workflows:
   income-expenses-android:
     name: Income & Expenses Android APK
@@ -27,14 +26,16 @@ workflows:
 
       - name: Install dependencies
         script: |
+          set -e
           flutter pub get
 
       - name: Analyze code
         script: |
-      - flutter analyze --no-fatal-infos --no-fatal-warnings
+          flutter analyze --no-fatal-infos --no-fatal-warnings
 
       - name: Build release APK
         script: |
+          set -e
           flutter build apk --release
 
     artifacts:
