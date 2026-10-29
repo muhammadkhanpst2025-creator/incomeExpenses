@@ -1,142 +1,345 @@
+
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:printing/printing.dart';
 import 'package:url_launcher/url_launcher.dart';
+
 import 'database.dart';
 import 'models.dart';
+import 'widgets.dart';
 
-class ReportScreen extends StatefulWidget {
-  final String type; // 'Payable' or 'Receivable'
-  const ReportScreen({super.key, required this.type});
+class ReportsPage extends StatefulWidget {
+  const ReportsPage({super.key});
 
   @override
-  State<ReportScreen> createState() => _ReportScreenState();
+  State<ReportsPage> createState() => _ReportsPageState();
 }
 
-class _ReportScreenState extends State<ReportScreen> {
-  List<Account> accounts = [];
-  bool isLoading = true;
+class _ReportsPageState extends State<ReportsPage> {
+  String _type = 'payable';
+  int? _selectedAccountId;
+  List<KhataAccount> _accounts = [];
+  List<KhataTransaction> _transactions = [];
+  bool _loading = true;
 
   @override
   void initState() {
     super.initState();
-    fetchAccounts();
+    _loadReport();
   }
 
-  Future<void> fetchAccounts() async {
-    setState(() => isLoading = true);
-    final allAccounts = await DBHelper.instance.getAccounts();
-    if (!mounted) return;
-    setState(() {
-      accounts = allAccounts.where((acc) => acc.type == widget.type).toList();
-      isLoading = false;
-    });
-  }
+  Future<void> _loadReport() async {
+    setState(() => _loading = true);
 
-  void sendWhatsAppMessage(Account account) async {
-    if (account.phoneNumber == null || account.phoneNumber!.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Phone number is missing, cannot send WhatsApp message.')),
+    try {
+      final accounts = await KhataDatabase.instance.getAccounts(
+        type: _type,
       );
-      return;
-    }
-    final phone = account.phoneNumber!.replaceAll(RegExp(r'[^0-9]'), '');
-    if (phone.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enter a valid international phone number.')),
-      );
-      return;
-    }
-    final message = 'Hello ${account.name}, your ${widget.type.toLowerCase()} balance is \$${account.balance}. Please clear your dues.';
-    final url = Uri.parse('https://wa.me/$phone?text=${Uri.encodeComponent(message)}');
-    if (await canLaunchUrl(url)) {
-      await launchUrl(url, mode: LaunchMode.externalApplication);
+
+      int? accountId = _selectedAccountId;
+      if (!accounts.any((a) => a.id == accountId)) {
+        accountId = accounts.isNotEmpty ? accounts.first.id : null;
+      }
+
+      final transactions = accountId == null
+          ? <KhataTransaction>[]
+          : await KhataDatabase.instance.getTransactions(
+              accountId: accountId,
+            );
+
       if (!mounted) return;
-    } else {
+
+      setState(() {
+        _accounts = accounts;
+        _selectedAccountId = accountId;
+        _transactions = transactions;
+        _loading = false;
+      });
+    } catch (e) {
       if (!mounted) return;
+      setState(() => _loading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not launch WhatsApp')),
+        SnackBar(content: Text('Report load nahi hui: $e')),
       );
     }
   }
 
-  void editCategoryDialog(Account account) {
-    TextEditingController categoryController = TextEditingController(text: account.category ?? '');
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('Edit Category for ${account.name}'),
-        content: TextField(
-          controller: categoryController,
-          decoration: const InputDecoration(labelText: 'Category Name'),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
+  KhataAccount? get _selectedAccount {
+    for (final account in _accounts) {
+      if (account.id == _selectedAccountId) return account;
+    }
+    return null;
+  }
+
+  String get _reportTitle =>
+      _type == 'payable' ? 'Payable Report' : 'Receivable Report';
+
+  String _dateText(String value) {
+    final parsed = DateTime.tryParse(value);
+    return parsed == null ? value : DateFormat('dd-MM-yyyy').format(parsed);
+  }
+
+  Future<List<int>> _createPdf() async {
+    final account = _selectedAccount;
+    final pdf = pw.Document();
+
+    pdf.addPage(
+      pw.MultiPage(
+        build: (context) => [
+          pw.Text(
+            'Income & Expenses',
+            style: pw.TextStyle(
+              fontSize: 22,
+              fontWeight: pw.FontWeight.bold,
+            ),
           ),
-          ElevatedButton(
-            onPressed: () async {
-              account.category = categoryController.text;
-              await DBHelper.instance.updateAccount(account);
-              if (!context.mounted) return;
-              Navigator.pop(context);
-              fetchAccounts();
-            },
-            child: const Text('Save'),
+          pw.SizedBox(height: 8),
+          pw.Text(_reportTitle),
+          pw.SizedBox(height: 12),
+          pw.Text('Account: ${account?.name ?? "No account"}'),
+          pw.Text('Date: ${DateFormat('dd-MM-yyyy').format(DateTime.now())}'),
+          pw.SizedBox(height: 16),
+          pw.TableHelper.fromTextArray(
+            headers: ['Date', 'Type', 'Category / Note', 'Amount'],
+            data: _transactions.map((t) {
+              return [
+                _dateText(t.date),
+                t.type,
+                (t.note ?? '').isEmpty ? (t.category ?? '-') : t.note!,
+                t.amount.toStringAsFixed(2),
+              ];
+            }).toList(),
+          ),
+          pw.SizedBox(height: 16),
+          pw.Text(
+            'Current account balance: ${account?.balance.toStringAsFixed(2) ?? "0.00"}',
+            style: pw.TextStyle(fontWeight: pw.FontWeight.bold),
           ),
         ],
       ),
+    );
+
+    return pdf.save();
+  }
+
+  Future<void> _sharePdf() async {
+    if (_selectedAccount == null) {
+      _showMessage('Pehle account select karein.');
+      return;
+    }
+
+    try {
+      final bytes = await _createPdf();
+      await Printing.sharePdf(
+        bytes: bytes,
+        filename:
+            '${_reportTitle.replaceAll(' ', '_')}_${_selectedAccount!.name.replaceAll(' ', '_')}.pdf',
+      );
+    } catch (e) {
+      _showMessage('PDF share nahi hui: $e');
+    }
+  }
+
+  Future<void> _shareWhatsAppMessage() async {
+    final account = _selectedAccount;
+    if (account == null) {
+      _showMessage('Pehle account select karein.');
+      return;
+    }
+
+    final phone = (account.phone ?? '').replaceAll(
+      RegExp(r'[^0-9+]'),
+      '',
+    );
+
+    if (phone.isEmpty) {
+      _showMessage(
+        'Is account ka phone number save nahi hai. '
+        'Account edit karke phone number add karein.',
+      );
+      return;
+    }
+
+    String normalizedPhone = phone.replaceAll('+', '');
+    if (normalizedPhone.startsWith('00')) {
+      normalizedPhone = normalizedPhone.substring(2);
+    } else if (normalizedPhone.startsWith('0')) {
+      normalizedPhone = '92${normalizedPhone.substring(1)}';
+    }
+
+    final message = '''
+$_reportTitle
+
+Account: ${account.name}
+Current Balance: ${account.balance.toStringAsFixed(2)}
+Transactions: ${_transactions.length}
+
+Report prepared by Income & Expenses app.
+''';
+
+    final uri = Uri.https(
+      'wa.me',
+      '/$normalizedPhone',
+      {'text': message},
+    );
+
+    try {
+      final opened = await launchUrl(
+        uri,
+        mode: LaunchMode.externalApplication,
+      );
+      if (!opened) {
+        _showMessage('WhatsApp open nahi ho saka.');
+      }
+    } catch (_) {
+      _showMessage('WhatsApp open nahi ho saka.');
+    }
+  }
+
+  void _showMessage(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    final account = _selectedAccount;
+
     return Scaffold(
       appBar: AppBar(
-        title: Text('${widget.type} Report Page'),
-        backgroundColor: Colors.transparent,
+        title: const Text('Reports'),
       ),
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : accounts.isEmpty
-              ? Center(child: Text('No ${widget.type} accounts found.'))
-              : ListView.builder(
-                  padding: const EdgeInsets.all(16),
-                  itemCount: accounts.length,
-                  itemBuilder: (context, index) {
-                    final acc = accounts[index];
-                    return Container(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(colors: [Color(0xFF232526), Color(0xFF414345)]),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: Colors.tealAccent, width: 1),
-                      ),
-                      child: ListTile(
-                        leading: CircleAvatar(
-                          backgroundColor: Colors.teal,
-                          child: Text(acc.name[0].toUpperCase(), style: const TextStyle(color: Colors.white)),
-                        ),
-                        title: Text(acc.name, style: const TextStyle(fontWeight: FontWeight.bold)),
-                        subtitle: Text('Category: ${acc.category ?? "General"}\nBalance: \$${acc.balance.toStringAsFixed(2)}', style: const TextStyle(color: Colors.white70)),
-                        isThreeLine: true,
-                        trailing: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (widget.type == 'Payable')
-                              IconButton(
-                                icon: const Icon(Icons.edit, color: Colors.amber),
-                                onPressed: () => editCategoryDialog(acc),
-                              ),
-                            IconButton(
-                              icon: const CircleAvatar(backgroundColor: Colors.green, child: Icon(Icons.share, color: Colors.white, size: 16)),
-                              onPressed: () => sendWhatsAppMessage(acc),
-                            ),
-                          ],
-                        ),
-                      ),
-                    );
-                  },
+      body: RefreshIndicator(
+        onRefresh: _loadReport,
+        child: ListView(
+          padding: const EdgeInsets.all(16),
+          children: [
+            SegmentedButton<String>(
+              segments: const [
+                ButtonSegment(
+                  value: 'payable',
+                  label: Text('Payable'),
+                  icon: Icon(Icons.call_made),
                 ),
+                ButtonSegment(
+                  value: 'receivable',
+                  label: Text('Receivable'),
+                  icon: Icon(Icons.call_received),
+                ),
+              ],
+              selected: {_type},
+              onSelectionChanged: (selection) {
+                setState(() {
+                  _type = selection.first;
+                  _selectedAccountId = null;
+                });
+                _loadReport();
+              },
+            ),
+            const SizedBox(height: 18),
+            if (_loading)
+              const Center(child: CircularProgressIndicator())
+            else ...[
+              if (_accounts.isNotEmpty)
+                DropdownButtonFormField<int>(
+                  value: _selectedAccountId,
+                  decoration: const InputDecoration(
+                    labelText: 'Select account',
+                    border: OutlineInputBorder(),
+                  ),
+                  items: _accounts.map((account) {
+                    return DropdownMenuItem<int>(
+                      value: account.id,
+                      child: Text(account.name),
+                    );
+                  }).toList(),
+                  onChanged: (value) {
+                    setState(() => _selectedAccountId = value);
+                    _loadReport();
+                  },
+                )
+              else
+                const Text(
+                  'Is category mein abhi koi account nahi hai.',
+                ),
+              const SizedBox(height: 16),
+              if (account != null)
+                Card(
+                  child: ListTile(
+                    leading: const Icon(Icons.account_balance_wallet),
+                    title: Text(account.name),
+                    subtitle: Text(_reportTitle),
+                    trailing: Text(
+                      account.balance.toStringAsFixed(2),
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: account.balance < 0
+                            ? Colors.red
+                            : Colors.green,
+                      ),
+                    ),
+                  ),
+                ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed: account == null ? null : _sharePdf,
+                      icon: const Icon(Icons.picture_as_pdf),
+                      label: const Text('Share PDF'),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: FilledButton.icon(
+                      onPressed:
+                          account == null ? null : _shareWhatsAppMessage,
+                      icon: const Icon(Icons.message),
+                      label: const Text('WhatsApp'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 18),
+              Text(
+                'Transactions (${_transactions.length})',
+                style: Theme.of(context).textTheme.titleMedium,
+              ),
+              const SizedBox(height: 8),
+              if (_transactions.isEmpty)
+                const Card(
+                  child: Padding(
+                    padding: EdgeInsets.all(18),
+                    child: Text('Is account ki koi transaction nahi mili.'),
+                  ),
+                )
+              else
+                ..._transactions.map(
+                  (t) => Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.receipt_long),
+                      title: Text(
+                        (t.note ?? '').isEmpty
+                            ? (t.category ?? t.type)
+                            : t.note!,
+                      ),
+                      subtitle: Text(
+                        '${t.type} • ${_dateText(t.date)}',
+                      ),
+                      trailing: Text(
+                        t.amount.toStringAsFixed(2),
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
     );
   }
 }
