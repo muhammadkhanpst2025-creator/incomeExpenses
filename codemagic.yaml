@@ -2,7 +2,7 @@ workflows:
   sahil-khata-android:
     name: Income and Expenses Android APK
     max_build_duration: 60
-    working_directory: "income _and_expenses"
+    working_directory: "incomeExpenses"
     environment:
       flutter: stable
     scripts:
