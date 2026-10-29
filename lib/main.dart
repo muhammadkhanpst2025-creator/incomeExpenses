@@ -10,7 +10,7 @@ void main() async {
 }
 
 class IncomeExpensesApp extends StatelessWidget {
-  const IncomeExpensesApp({Key? key}) : super(key: key);
+  const IncomeExpensesApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -28,7 +28,7 @@ class IncomeExpensesApp extends StatelessWidget {
 }
 
 class DashboardScreen extends StatefulWidget {
-  const DashboardScreen({Key? key}) : super(key: key);
+  const DashboardScreen({super.key});
 
   @override
   State<DashboardScreen> createState() => _DashboardScreenState();
