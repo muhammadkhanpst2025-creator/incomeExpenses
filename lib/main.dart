@@ -385,12 +385,17 @@ class _DashboardPageState extends State<DashboardPage> {
 
           const SizedBox(height: 26),
           const Center(
-            child: Text(
-              'Developed with care',
-              style: TextStyle(
-                color: muted,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
+            child: Padding(
+              padding: EdgeInsets.only(top: 4, bottom: 8),
+              child: Text(
+                'Developed by SAHIL JANWERY',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: purple,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.0,
+                ),
               ),
             ),
           ),
