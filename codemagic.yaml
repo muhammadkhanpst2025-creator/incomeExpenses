@@ -1,12 +1,13 @@
 workflows:
   sahil-khata-android:
-    name: Sahil Khata Android APK
+    name: Income and Expenses Android APK
     max_build_duration: 60
+    working_directory: "incomeExpenses"
     environment:
       flutter: stable
     scripts:
       - name: Generate Android platform files
-        script: flutter create --platforms=android --project-name=sahil_khata .
+        script: flutter create --platforms=android --project-name=income_and_expenses .
       - name: Get Flutter packages
         script: flutter pub get
       - name: Analyze Dart source
