@@ -5,7 +5,7 @@ import 'models.dart';
 
 class ReportScreen extends StatefulWidget {
   final String type; // 'Payable' or 'Receivable'
-  const ReportScreen({Key? key, required this.type}) : super(key: key);
+  const ReportScreen({super.key, required this.type});
 
   @override
   State<ReportScreen> createState() => _ReportScreenState();
