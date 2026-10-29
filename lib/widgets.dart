@@ -7,12 +7,12 @@ class NeonCard extends StatelessWidget {
   final List<Color> gradientColors;
 
   const NeonCard({
-    Key? key,
+    super.key,
     required this.title,
     required this.amount,
     required this.icon,
     required this.gradientColors,
-  }) : super(key: key);
+  });
 
   @override
   Widget build(BuildContext context) {
