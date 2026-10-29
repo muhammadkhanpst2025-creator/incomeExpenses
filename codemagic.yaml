@@ -8,21 +8,34 @@ workflows:
       flutter: stable
 
     scripts:
-      - name: Check Flutter project
+      - name: Check and prepare Flutter project
         script: |
-          echo "Checking Flutter project files..."
-          test -f pubspec.yaml || (echo "ERROR: pubspec.yaml missing" && exit 1)
-          test -f lib/main.dart || (echo "ERROR: lib/main.dart missing" && exit 1)
-          test -d android || (echo "ERROR: android folder missing. This must be a complete Flutter project." && exit 1)
+          set -e
+
+          echo "Checking project files..."
+          test -f pubspec.yaml
+          test -f lib/main.dart
+
+          echo "Checking Android folder..."
+          if [ ! -d android ]; then
+            echo "Generating missing Android files..."
+            flutter create --platforms=android --project-name income_expenses --org com.example .
+          fi
+
+          test -f android/gradlew
+          echo "Android folder is ready."
 
       - name: Install dependencies
-        script: flutter pub get
+        script: |
+          flutter pub get
 
       - name: Analyze code
-        script: flutter analyze
+        script: |
+          flutter analyze
 
       - name: Build release APK
-        script: flutter build apk --release
+        script: |
+          flutter build apk --release
 
     artifacts:
-      - build/app/outputs/flutter-apk/app-release.apk
+      - build/app/outputs/flutter-apk/*.apk
