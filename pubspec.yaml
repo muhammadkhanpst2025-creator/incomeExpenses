@@ -1,0 +1,32 @@
+name: income_expenses
+description: Income and expenses management application.
+publish_to: 'none'
+version: 1.0.0+3
+environment:
+  sdk: '>=3.4.0 <4.0.0'
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  sqflite: ^2.4.2
+  path: ^1.9.1
+  intl: ^0.20.2
+  pdf: ^3.11.3
+  printing: ^5.14.2
+  url_launcher: ^6.3.2
+  share_plus: ^10.1.4
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  flutter_launcher_icons: ^0.14.4
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/wallet.png
+flutter_launcher_icons:
+  android: true
+  ios: false
+  image_path: assets/wallet.png
+  adaptive_icon_background: '#FFFFFF'
+  adaptive_icon_foreground: assets/wallet.png
